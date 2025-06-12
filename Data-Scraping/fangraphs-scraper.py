@@ -1,4 +1,6 @@
 
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -7,9 +9,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
-import time
-import csv
 import pandas as pd
+import time
 
 BASE_URL = (
     "https://www.fangraphs.com/leaders/major-league?"
@@ -26,16 +27,11 @@ DATA_TYPES = [
 
 def setup_driver():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless=new")  # Disabled for debugging
+    # chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-
-    # Optional: Configure proxy if needed
-    # chrome_options.add_argument('--proxy-server=http://your.proxy.server:port')
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument(
-        "--disable-blink-features=AutomationControlled")
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
     service = Service(ChromeDriverManager().install())
@@ -44,7 +40,6 @@ def setup_driver():
 
 
 def extract_data(driver, url):
-    print(f"Loading page: {url}")
     driver.get(url)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(3)
@@ -82,7 +77,7 @@ def extract_data(driver, url):
     return player_data
 
 
-def paginate_and_scrape(driver, stat_type, stat_id, name):
+def paginate_and_scrape(driver, stat_type, stat_id):
     page = 1
     all_data = []
     while True:
@@ -96,25 +91,40 @@ def paginate_and_scrape(driver, stat_type, stat_id, name):
     return all_data
 
 
-def save_to_csv(data, filename):
-    if not data:
-        print(f"No data to save for {filename}")
-        return
-    df = pd.DataFrame(data)
-    df = df.sort_values(by=["Team", "Name"])
-    df.to_csv(filename, index=False, encoding="utf-8")
-    print(f"Saved {len(df)} players to {filename}")
+def write_to_google_sheets(sheet_title, sheet_data_dict):
+    scope = ["https://spreadsheets.google.com/feeds",
+             "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "credentials.json", scope)
+    client = gspread.authorize(creds)
+
+    try:
+        sheet = client.open(sheet_title)
+    except gspread.SpreadsheetNotFound:
+        sheet = client.create(sheet_title)
+
+    for tab_name, data in sheet_data_dict.items():
+        df = pd.DataFrame(data)
+        df = df.sort_values(by=["Team", "Name"]
+                            ) if "Team" in df.columns else df
+        if tab_name in [ws.title for ws in sheet.worksheets()]:
+            worksheet = sheet.worksheet(tab_name)
+            sheet.del_worksheet(worksheet)
+        worksheet = sheet.add_worksheet(title=tab_name, rows=str(
+            len(df) + 10), cols=str(len(df.columns)))
+        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
 
 
 def main():
     driver = setup_driver()
     try:
+        output = {}
         for data_type in DATA_TYPES:
             print(f"Scraping {data_type['name']}...")
             all_data = paginate_and_scrape(
-                driver, data_type["stats"], data_type["type_id"], data_type["name"])
-            filename = f"{data_type['name']}_2025.csv"
-            save_to_csv(all_data, filename)
+                driver, data_type["stats"], data_type["type_id"])
+            output[data_type["name"]] = all_data
+        write_to_google_sheets("FanGraphs 2025 Stats", output)
     finally:
         driver.quit()
 

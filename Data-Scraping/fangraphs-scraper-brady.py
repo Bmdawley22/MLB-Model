@@ -66,9 +66,10 @@ def scrape_table(driver):
             f.write(driver.page_source)
         raise RuntimeError("Expected table not found inside .table-scroll.")
 
-    print("✅ Found table. Dumping HTML for verification...")
-    with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
-        f.write(table.get_attribute("outerHTML"))
+    # Uncomment below to debug the HTML structure
+    # print("✅ Found table. Dumping HTML for verification...")
+    # with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
+    #     f.write(table.get_attribute("outerHTML"))
 
     headers = [th.text.strip()
                for th in table.find_elements(By.XPATH, ".//thead/tr/th")]

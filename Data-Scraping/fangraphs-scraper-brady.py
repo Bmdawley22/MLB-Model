@@ -66,13 +66,19 @@ def scrape_table(driver):
             f.write(driver.page_source)
         raise RuntimeError("Expected table not found inside .table-scroll.")
 
-    # Uncomment below to debug the HTML structure
-    # print("✅ Found table. Dumping HTML for verification...")
-    # with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
-    #     f.write(table.get_attribute("outerHTML"))
-
+    print("✅ Found table. Now extracting headers...")
     headers = [th.text.strip()
                for th in table.find_elements(By.XPATH, ".//thead/tr/th")]
+    if headers:
+        print("Headers found:", headers)
+    else:
+        print("❌ No headers found. Check fangraphs_table_debug.html for clues.")
+        with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
+            f.write(table.get_attribute("outerHTML"))
+        raise RuntimeError("No headers found in the table.")
+        return [], []
+
+    print("Now extracting data rows...")
     rows = table.find_elements(By.XPATH, ".//tbody/tr")
 
     data = []
@@ -81,6 +87,14 @@ def scrape_table(driver):
         row_data = [c.text.strip() for c in cells]
         if len(row_data) == len(headers):
             data.append(row_data)
+
+    if data:
+        print(f"✅ Found {len(data)} data rows.")
+    else:
+        print("❌ No data rows found. Check fangraphs_table_debug.html for clues.")
+        with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
+            f.write(table.get_attribute("outerHTML"))
+        return headers, []
 
     return headers, data
 

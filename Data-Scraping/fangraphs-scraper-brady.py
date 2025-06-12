@@ -9,9 +9,21 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
 
-# URL to scrape
-URL = "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=7&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10"
-# URL2 = "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=4&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0"
+# Define the URLs and their corresponding sheet names
+FANGRAPHS_URLS = [
+    {
+        "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=7&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10",
+        "sheet_name": "Batter Splits",
+        "parent_div_class_target": "table-scroll"
+    },
+    {
+        "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=4&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
+        "sheet_name": "Pitcher Splits",
+        "parent_div_class_target": "table-scroll"
+    },
+
+    # Add more URL and sheet name pairs as needed
+]
 
 
 def setup_driver():
@@ -44,31 +56,33 @@ def scroll_to_bottom(driver):
         last_height = new_height
 
 
-def scrape_table(driver):
-    print("Navigating to FanGraphs page...")
-    driver.get(URL)
+def scrape_table(driver, url, parent_div_class_target="table-scroll"):
+    print("🔄 Scraping data from:", url)
+    driver.get(url)
 
     scroll_to_bottom(driver)
 
     try:
-        print("Waiting for div.table-scroll to appear...")
+        print(f"Waiting for div.{parent_div_class_target} to appear...")
         table_container = WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "table-scroll"))
+            EC.presence_of_element_located(
+                (By.CLASS_NAME, f"{parent_div_class_target}"))
         )
     except:
-        print("❌ .table-scroll container not found.")
+        print(f"❌ .{parent_div_class_target} container not found.")
         with open("page_debug.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        raise RuntimeError("table-scroll container not found.")
+        raise RuntimeError(f"{parent_div_class_target} container not found.")
 
     try:
-        print("Finding table inside .table-scroll...")
+        print(f"Finding table inside .{parent_div_class_target}...")
         table = table_container.find_element(By.TAG_NAME, "table")
     except:
-        print("❌ No <table> inside .table-scroll.")
+        print(f"❌ No <table> inside .{parent_div_class_target}.")
         with open("page_debug.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        raise RuntimeError("Expected table not found inside .table-scroll.")
+        raise RuntimeError(
+            f"Expected table not found inside .{parent_div_class_target}.")
 
     print("✅ Found table. Now extracting headers...")
     headers = [th.text.strip()
@@ -138,23 +152,32 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
 def main():
     driver = setup_driver()
     try:
-        headers, data = scrape_table(driver)
-        if not data:
-            print("⚠️ No data rows found. Check fangraphs_table_debug.html for clues.")
-            return
+        for url_data in FANGRAPHS_URLS:
+            url = url_data["url"]
+            sheet_name = url_data["sheet_name"]
+            parent_div_class_target = url_data["parent_div_class_target"]
+            print(f"\nProcessing {sheet_name}...")
 
-        df = pd.DataFrame(data, columns=headers)
+            headers, data = scrape_table(driver, url, parent_div_class_target)
+            if not data:
+                print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
+                continue
 
-        if "Team" in df.columns and "Name" in df.columns:
-            df.sort_values(by=["Team", "Name"], inplace=True)
+            df = pd.DataFrame(data, columns=headers)
 
-        # # Save CSV locally
-        # df.to_csv("fangraphs_pitch_splits_2025.csv", index=False)
-        # print("✅ Saved to fangraphs_pitch_splits_2025.csv")
+            if "Team" in df.columns and "Name" in df.columns:
+                df.sort_values(by=["Team", "Name"], inplace=True)
 
-        # Upload to Google Sheets
-        upload_to_google_sheets(
-            df, spreadsheet_name="FanGraphs 2025 Stats", worksheet_name="Batter Splits")
+            # Upload to Google Sheets
+            upload_to_google_sheets(
+                df,
+                spreadsheet_name="FanGraphs 2025 Stats",
+                worksheet_name=sheet_name
+            )
+
+            # Add a small delay between requests to avoid overwhelming the server
+            time.sleep(random.uniform(2, 4))
+
     finally:
         driver.quit()
 

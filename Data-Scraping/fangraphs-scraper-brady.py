@@ -5,9 +5,13 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import gspread
+from google.oauth2.service_account import Credentials
+from gspread_dataframe import set_with_dataframe
 
 # URL to scrape
 URL = "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=7&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10"
+# URL2 = "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=4&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0"
 
 
 def setup_driver():
@@ -82,12 +86,14 @@ def scrape_table(driver):
     rows = table.find_elements(By.XPATH, ".//tbody/tr")
 
     data = []
+    i = 0
     for row in rows:
-        cells = row.find_elements(By.TAG_NAME, "td")
-        row_data = [c.text.strip() for c in cells]
-        if len(row_data) == len(headers):
-            data.append(row_data)
-
+        if i < 10:  # Debugging: limit to first 10 rows REMOVE THIS LINE FOR FULL DATA
+            cells = row.find_elements(By.TAG_NAME, "td")
+            row_data = [c.text.strip() for c in cells]
+            if len(row_data) == len(headers):
+                data.append(row_data)
+            i += 1
     if data:
         print(f"✅ Found {len(data)} data rows.")
     else:
@@ -97,6 +103,36 @@ def scrape_table(driver):
         return headers, []
 
     return headers, data
+
+
+def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
+    print("🔄 Uploading to Google Sheets...")
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_file(
+        "credentials.json", scopes=scope)
+    client = gspread.authorize(creds)
+
+    try:
+        sheet = client.open(spreadsheet_name)
+    except gspread.SpreadsheetNotFound:
+        print(f"❌ Spreadsheet '{spreadsheet_name}' not found.")
+        return
+
+    try:
+        worksheet = sheet.worksheet(worksheet_name)
+    except gspread.WorksheetNotFound:
+        print(
+            f"⚠️ Worksheet '{worksheet_name}' not found. Creating a new one.")
+        worksheet = sheet.add_worksheet(
+            title=worksheet_name, rows="1000", cols="40")
+
+    worksheet.clear()
+    set_with_dataframe(worksheet, df)
+    print(
+        f"✅ Upload complete to Google Sheet: {spreadsheet_name} -> {worksheet_name}")
 
 
 def main():
@@ -112,8 +148,13 @@ def main():
         if "Team" in df.columns and "Name" in df.columns:
             df.sort_values(by=["Team", "Name"], inplace=True)
 
-        df.to_csv("fangraphs_pitch_splits_2025.csv", index=False)
-        print("✅ Saved to fangraphs_pitch_splits_2025.csv")
+        # # Save CSV locally
+        # df.to_csv("fangraphs_pitch_splits_2025.csv", index=False)
+        # print("✅ Saved to fangraphs_pitch_splits_2025.csv")
+
+        # Upload to Google Sheets
+        upload_to_google_sheets(
+            df, spreadsheet_name="FanGraphs 2025 Stats", worksheet_name="Batter Splits")
     finally:
         driver.quit()
 

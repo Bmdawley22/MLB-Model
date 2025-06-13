@@ -5,9 +5,11 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 # Define the URLs and their corresponding sheet names
 STAT_URLS = [
@@ -32,38 +34,59 @@ STAT_URLS = [
 
 
 def setup_driver():
+    caps = DesiredCapabilities.CHROME
+    caps["goog:loggingPrefs"] = {"performance": "ALL"}
+
     options = uc.ChromeOptions()
-    options.headless = False  # set to True if you want to run invisibly
+    options.headless = False
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    return uc.Chrome(options=options)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-dev-shm-usage")
+    prefs = {"profile.managed_default_content_settings.images": 2}
+    options.add_experimental_option("prefs", prefs)
+
+    driver = uc.Chrome(options=options, desired_capabilities=caps)
+    driver.set_page_load_timeout(30)
+    time.sleep(2)
+    return driver
 
 
-def wait_for_data_rows(driver):
-    print("Waiting for player table row text to appear...")
-    WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located(
-            (By.XPATH, "//table//tbody//tr[1]//td[1]"))
-    )
-    time.sleep(1)
+def safe_get(driver, url, retries=3, wait_time=5):
+    for attempt in range(retries):
+        try:
+            print(f"Navigating to URL (Attempt {attempt + 1}): {url}")
+            driver.get(url)
+            print("✅ Page loaded successfully.")
+            return True
+        except (TimeoutException, WebDriverException) as e:
+            print(
+                f"⚠️ Attempt {attempt + 1} failed: {e}. Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+    print(f"❌ Failed to load page after {retries} attempts: {url}")
+    return False
 
 
 def scroll_to_bottom(driver):
     print("Scrolling to load full page...")
     last_height = driver.execute_script("return document.body.scrollHeight")
-    for _ in range(3):  # scroll several times to trigger lazy load
+    for i in range(3):
+        print(f"🔄 Scrolling down. Attempt: {i+1}")
         driver.execute_script(
             "window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(3)
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
+            print("✅ Reached the bottom of the page.")
             break
         last_height = new_height
 
 
-def scrape_table(driver, url, parent_div_class_target="table-scroll"):
-    print("🔄 Scraping data from:", url)
-    driver.get(url)
+def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=False):
+    print("\n🔄 Scraping data from:", url)
+    if not safe_get(driver, url):
+        return [], []
 
     scroll_to_bottom(driver)
 
@@ -77,7 +100,8 @@ def scrape_table(driver, url, parent_div_class_target="table-scroll"):
         print(f"❌ .{parent_div_class_target} container not found.")
         with open("page_debug.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        raise RuntimeError(f"{parent_div_class_target} container not found.")
+        return [], []
+    print(f"✅ Found div.{parent_div_class_target}.")
 
     try:
         print(f"Finding table inside .{parent_div_class_target}...")
@@ -86,41 +110,39 @@ def scrape_table(driver, url, parent_div_class_target="table-scroll"):
         print(f"❌ No <table> inside .{parent_div_class_target}.")
         with open("page_debug.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        raise RuntimeError(
-            f"Expected table not found inside .{parent_div_class_target}.")
-
+        return [], []
     print("✅ Found table. Now extracting headers...")
+
     headers = [th.text.strip()
                for th in table.find_elements(By.XPATH, ".//thead/tr/th")]
-    if headers:
-        print("Headers found:", headers)
-    else:
-        print("❌ No headers found. Check fangraphs_table_debug.html for clues.")
-        with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
+    if not headers:
+        print("❌ No headers found.")
+        with open("scraper_debug.html", "w", encoding="utf-8") as f:
             f.write(table.get_attribute("outerHTML"))
-        raise RuntimeError("No headers found in the table.")
         return [], []
+    print(f"✅ Headers found: {headers}")
 
     print("Now extracting data rows...")
     rows = table.find_elements(By.XPATH, ".//tbody/tr")
-
     data = []
     i = 0
+    numRows = 5 if debug else len(rows)
     for row in rows:
-        if i < 10:  # Debugging: limit to first 10 rows REMOVE THIS LINE FOR FULL DATA
+        if i < numRows:  # Limit to first 5 rows if debugging
+            i += 1
             cells = row.find_elements(By.TAG_NAME, "td")
             row_data = [c.text.strip() for c in cells]
             if len(row_data) == len(headers):
                 data.append(row_data)
-            i += 1
-    if data:
-        print(f"✅ Found {len(data)} data rows.")
-    else:
-        print("❌ No data rows found. Check fangraphs_table_debug.html for clues.")
-        with open("fangraphs_table_debug.html", "w", encoding="utf-8") as f:
+        else:
+            break
+
+    if not data:
+        print("❌ No data rows found.")
+        with open("table_debug.html", "w", encoding="utf-8") as f:
             f.write(table.get_attribute("outerHTML"))
         return headers, []
-
+    print(f"✅ Found {len(data)} data rows.")
     return headers, data
 
 
@@ -136,12 +158,14 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
 
     try:
         sheet = client.open(spreadsheet_name)
+        print(f"✅ Connected to spreadsheet: {spreadsheet_name}")
     except gspread.SpreadsheetNotFound:
         print(f"❌ Spreadsheet '{spreadsheet_name}' not found.")
         return
 
     try:
         worksheet = sheet.worksheet(worksheet_name)
+        print(f"✅ Connected to worksheet: {worksheet_name}")
     except gspread.WorksheetNotFound:
         print(
             f"⚠️ Worksheet '{worksheet_name}' not found. Creating a new one.")
@@ -163,26 +187,23 @@ def main():
             parent_div_class_target = url_data["parent_div_class_target"]
             print(f"\nProcessing {sheet_name}...")
 
-            headers, data = scrape_table(driver, url, parent_div_class_target)
+            headers, data = scrape_table(
+                driver, url, parent_div_class_target, True)
             if not data:
                 print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
                 continue
 
             df = pd.DataFrame(data, columns=headers)
-
             if "Team" in df.columns and "Name" in df.columns:
                 df.sort_values(by=["Team", "Name"], inplace=True)
 
-            # Upload to Google Sheets
             upload_to_google_sheets(
                 df,
                 spreadsheet_name="MLB Stats",
                 worksheet_name=sheet_name
             )
 
-            # Add a small delay between requests to avoid overwhelming the server
             time.sleep(random.uniform(2, 4))
-
     finally:
         driver.quit()
 

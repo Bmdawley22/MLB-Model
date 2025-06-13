@@ -10,6 +10,13 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+import argparse
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(
+    description='Scrape FanGraphs stats with optional debug mode')
+parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+args = parser.parse_args()
 
 # Define the URLs and their corresponding sheet names
 STAT_URLS = [
@@ -66,7 +73,7 @@ def setup_driver():
 def safe_get(driver, url, retries=3, wait_time=5):
     for attempt in range(retries):
         try:
-            print(f"Navigating to URL (Attempt {attempt + 1}): {url}")
+            print(f"Navigating to URL (Attempt {attempt + 1}): {url}\n")
             driver.get(url)
             print("✅ Page loaded successfully.")
             return True
@@ -87,14 +94,15 @@ def scroll_to_bottom(driver):
             "window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(3)
         new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
+        print
+        if (new_height - last_height) < 100:
             print("✅ Reached the bottom of the page.")
             break
         last_height = new_height
 
 
-def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=False):
-    print("\n🔄 Scraping data from:", url)
+def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=False, rerun=False):
+    print(f"\n🔄 Scraping data from: {url}\n")
     if not safe_get(driver, url):
         return [], []
 
@@ -130,15 +138,25 @@ def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=Fals
         with open("scraper_debug.html", "w", encoding="utf-8") as f:
             f.write(table.get_attribute("outerHTML"))
         return [], []
+    if headers[0] == "" and headers[1] == "" and headers[2] == "":
+        print("❌ Headers are empty. Likely a loading issue. Attempting to rerun...")
+        if not rerun:
+            print("🔄 Retrying to scrape the table...")
+            return scrape_table(driver, url, parent_div_class_target, debug, rerun=True)
+        else:
+            print("❌ Failed to retrieve headers after retrying.")
+            with open("scraper_debug.html", "w", encoding="utf-8") as f:
+                f.write(table.get_attribute("outerHTML"))
+        return [], []
     print(f"✅ Headers found: {headers}")
 
     print("Now extracting data rows...")
     rows = table.find_elements(By.XPATH, ".//tbody/tr")
     data = []
     i = 0
-    numRows = 5 if debug else len(rows)
+    numRows = 10 if debug else len(rows)
     for row in rows:
-        if i < numRows:  # Limit to first 5 rows if debugging
+        if i < numRows:  # Limit to first x number of rows if debugging
             i += 1
             cells = row.find_elements(By.TAG_NAME, "td")
             row_data = [c.text.strip() for c in cells]
@@ -185,7 +203,7 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
     worksheet.clear()
     set_with_dataframe(worksheet, df)
     print(
-        f"✅ Upload complete to Google Sheet: {spreadsheet_name} -> {worksheet_name}")
+        f"✅ Upload complete to Google Sheet: {spreadsheet_name} -> {worksheet_name}\n\n")
 
 
 def main():
@@ -198,7 +216,7 @@ def main():
             print(f"\nProcessing {sheet_name}...")
 
             headers, data = scrape_table(
-                driver, url, parent_div_class_target, True)
+                driver, url, parent_div_class_target, args.debug)
             if not data:
                 print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
                 continue

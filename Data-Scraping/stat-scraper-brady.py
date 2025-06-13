@@ -96,10 +96,12 @@ def scroll_to_bottom(driver):
             "window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(3)
         new_height = driver.execute_script("return document.body.scrollHeight")
-        print
-        if (new_height - last_height) < 100:
+        if (new_height - last_height) < 200:
             print("✅ Reached the bottom of the page.")
             break
+        else:
+            print(f"📏 New height: {new_height}, Last height: {last_height}")
+            print("🔄 Scrolling again...")
         last_height = new_height
 
 
@@ -140,6 +142,7 @@ def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=Fals
         with open("scraper_debug.html", "w", encoding="utf-8") as f:
             f.write(table.get_attribute("outerHTML"))
         return [], []
+    # Check if headers are empty and handle rerun logic
     if headers[0] == "" and headers[1] == "" and headers[2] == "":
         print("❌ Headers are empty. Likely a loading issue. Attempting to rerun...")
         if not rerun:
@@ -209,32 +212,75 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
 
 
 def process_stats(driver, metadata, stat_type):
-    """Process a set of statistics (either batting or pitching)"""
+    """Process a set of statistics (either batting or pitching) and merge all tables"""
     print(f"\n🔄 Processing {stat_type} statistics...")
+
+    # List to store all dataframes
+    dfs = []
+
+    # First, collect all the individual tables
     for url_data in metadata:
         url = url_data["url"]
         sheet_name = url_data["sheet_name"]
         parent_div_class_target = url_data["parent_div_class_target"]
-        print(f"\nProcessing {sheet_name}...")
+        print(f"\nScraping data for {sheet_name}...")
 
         headers, data = scrape_table(
             driver, url, parent_div_class_target, args.debug)
         if not data:
-            print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
+            print(
+                f"⚠️ No data found for {sheet_name}. This may affect the final merged dataset.")
             continue
 
         df = pd.DataFrame(data, columns=headers)
         if "Team" in df.columns and "Name" in df.columns:
             df.sort_values(by=["Team", "Name"], inplace=True)
 
-        upload_to_google_sheets(
-            df,
-            spreadsheet_name="MLB Stats",
-            worksheet_name=sheet_name
-        )
+        # Add a suffix to all columns except 'Name' to identify the source table
+        rename_dict = {
+            col: f"{col}_{sheet_name}" for col in df.columns if col not in ["Name", "Team"]}
+        df = df.rename(columns=rename_dict)
+
+        # Store the dataframe
+        dfs.append(df)
 
         # Add delay between requests
         time.sleep(random.uniform(2, 4))
+
+    if not dfs:
+        print(f"❌ No data collected for {stat_type} statistics.")
+        return
+
+    print(f"\n🔄 Merging {stat_type} tables (keeping all players)...")
+
+    # Start with the first dataframe
+    final_df = dfs[0]
+    print(f"Starting with table 1: {len(final_df)} rows")
+
+    # Merge with each subsequent dataframe
+    for i, df in enumerate(dfs[1:], 2):
+        print(f"Merging with table {i}: {len(df)} rows")
+        final_df = pd.merge(final_df, df, on="Name", how="outer")
+        print(
+            f"After merge: {len(final_df)} rows (using outer join to keep all players)")
+
+    # Sort by Name
+    final_df = final_df.sort_values("Name")
+
+    # Replace NaN with empty string for better appearance in Google Sheets
+    final_df = final_df.fillna("")
+
+    # Upload the merged dataset
+    sheet_name = "Batting Stats" if stat_type == "batting" else "Pitching Stats"
+    print(f"\n📤 Uploading merged {stat_type} data to {sheet_name}...")
+    print(
+        f"Final dataset has {len(final_df)} rows and {len(final_df.columns)} columns")
+
+    upload_to_google_sheets(
+        final_df,
+        spreadsheet_name="MLB Stats",
+        worksheet_name=sheet_name
+    )
 
 
 def main():

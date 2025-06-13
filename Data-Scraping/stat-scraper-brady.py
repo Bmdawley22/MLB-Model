@@ -19,6 +19,16 @@ STAT_URLS = [
         "parent_div_class_target": "table-scroll"
     },
     {
+        "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&season=2025&season1=2025&ind=0&rost=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10&type=0&month=13",
+        "sheet_name": "(B) Standard vs LHP",
+        "parent_div_class_target": "table-scroll"
+    },
+    {
+        "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&season=2025&season1=2025&ind=0&rost=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10&type=0&month=14",
+        "sheet_name": "(B) Standard vs RHP",
+        "parent_div_class_target": "table-scroll"
+    },
+    {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=9&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
         "sheet_name": "(P) Pitch Splits",
         "parent_div_class_target": "table-scroll"

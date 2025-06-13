@@ -89,13 +89,37 @@ def safe_get(driver, url, retries=3, wait_time=5):
 
 def scroll_to_bottom(driver):
     print("Scrolling to load full page...")
-    last_height = driver.execute_script("return document.body.scrollHeight")
+    try:
+        last_height = driver.execute_script(
+            "return document.body.scrollHeight")
+    except TimeoutException:
+        print("⚠️ Timeout while getting initial scroll height")
+        return
+    except WebDriverException as e:
+        print(
+            f"⚠️ WebDriverException while getting initial scroll height: {e}")
+        return
+
     for i in range(3):
         print(f"🔄 Scrolling down. Attempt: {i+1}")
-        driver.execute_script(
-            "window.scrollTo(0, document.body.scrollHeight);")
+        try:
+            driver.execute_script(
+                "window.scrollTo(0, document.body.scrollHeight);")
+        except TimeoutException:
+            print(
+                f"⚠️ Timeout during scroll attempt {i+1}, continuing to next attempt")
+            continue
+
         time.sleep(3)
-        new_height = driver.execute_script("return document.body.scrollHeight")
+
+        try:
+            new_height = driver.execute_script(
+                "return document.body.scrollHeight")
+        except TimeoutException:
+            print(
+                f"⚠️ Timeout while getting new scroll height on attempt {i+1}")
+            continue
+
         if (new_height - last_height) < 200:
             print("✅ Reached the bottom of the page.")
             break
@@ -175,7 +199,7 @@ def scrape_table(driver, url, parent_div_class_target="table-scroll", debug=Fals
         with open("table_debug.html", "w", encoding="utf-8") as f:
             f.write(table.get_attribute("outerHTML"))
         return headers, []
-    print(f"✅ Found {len(data)} data rows.")
+    print(f"✅ Table data extracted. Extracted {len(data)} data rows.\n")
     return headers, data
 
 
@@ -235,11 +259,6 @@ def process_stats(driver, metadata, stat_type):
         df = pd.DataFrame(data, columns=headers)
         if "Team" in df.columns and "Name" in df.columns:
             df.sort_values(by=["Team", "Name"], inplace=True)
-
-        # Add a suffix to all columns except 'Name' to identify the source table
-        rename_dict = {
-            col: f"{col}_{stat_name}" for col in df.columns if col not in ["Name", "Team"]}
-        df = df.rename(columns=rename_dict)
 
         # Store the dataframe
         dfs.append(df)

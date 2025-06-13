@@ -22,17 +22,17 @@ args = parser.parse_args()
 BATTER_METADATA = [
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=14&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10",
-        "sheet_name": "(B) Pitch Val / 100",
+        "stat_name": "Pitch Val / 100",
         "parent_div_class_target": "table-scroll"
     },
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&season=2025&season1=2025&ind=0&rost=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10&type=0&month=13",
-        "sheet_name": "(B) Standard vs LHP",
+        "stat_name": "Standard vs LHP",
         "parent_div_class_target": "table-scroll"
     },
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&season=2025&season1=2025&ind=0&rost=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10&type=0&month=14",
-        "sheet_name": "(B) Standard vs RHP",
+        "stat_name": "Standard vs RHP",
         "parent_div_class_target": "table-scroll"
     }
 ]
@@ -41,12 +41,12 @@ BATTER_METADATA = [
 PITCHER_METADATA = [
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=9&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
-        "sheet_name": "(P) Pitch Splits",
+        "stat_name": "Pitch Splits",
         "parent_div_class_target": "table-scroll"
     },
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=13&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
-        "sheet_name": "(P) Pitch Val / 100",
+        "stat_name": "Pitch Val / 100",
         "parent_div_class_target": "table-scroll"
     }
 ]
@@ -221,15 +221,15 @@ def process_stats(driver, metadata, stat_type):
     # First, collect all the individual tables
     for url_data in metadata:
         url = url_data["url"]
-        sheet_name = url_data["sheet_name"]
+        stat_name = url_data["stat_name"]
         parent_div_class_target = url_data["parent_div_class_target"]
-        print(f"\nScraping data for {sheet_name}...")
+        print(f"\nScraping data for {stat_name}...")
 
         headers, data = scrape_table(
             driver, url, parent_div_class_target, args.debug)
         if not data:
             print(
-                f"⚠️ No data found for {sheet_name}. This may affect the final merged dataset.")
+                f"⚠️ No data found for {stat_name}. This may affect the final merged dataset.")
             continue
 
         df = pd.DataFrame(data, columns=headers)
@@ -238,7 +238,7 @@ def process_stats(driver, metadata, stat_type):
 
         # Add a suffix to all columns except 'Name' to identify the source table
         rename_dict = {
-            col: f"{col}_{sheet_name}" for col in df.columns if col not in ["Name", "Team"]}
+            col: f"{col}_{stat_name}" for col in df.columns if col not in ["Name", "Team"]}
         df = df.rename(columns=rename_dict)
 
         # Store the dataframe

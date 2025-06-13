@@ -10,17 +10,22 @@ from google.oauth2.service_account import Credentials
 from gspread_dataframe import set_with_dataframe
 
 # Define the URLs and their corresponding sheet names
-FANGRAPHS_URLS = [
+STAT_URLS = [
     {
-        "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=7&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10",
-        "sheet_name": "Batter Splits",
+        "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=14&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10",
+        "sheet_name": "(B) Pitch Val / 100",
         "parent_div_class_target": "table-scroll"
     },
-    {
-        "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=4&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
-        "sheet_name": "Pitcher Splits",
-        "parent_div_class_target": "table-scroll"
-    },
+    # {
+    #     "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=9&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
+    #     "sheet_name": "(P) Pitch Splits",
+    #     "parent_div_class_target": "table-scroll"
+    # },
+    # {
+    #     "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=13&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
+    #     "sheet_name": "(P) Pitch Val / 100",
+    #     "parent_div_class_target": "table-scroll"
+    # },
 
     # Add more URL and sheet name pairs as needed
 ]
@@ -152,7 +157,7 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
 def main():
     driver = setup_driver()
     try:
-        for url_data in FANGRAPHS_URLS:
+        for url_data in STAT_URLS:
             url = url_data["url"]
             sheet_name = url_data["sheet_name"]
             parent_div_class_target = url_data["parent_div_class_target"]
@@ -171,7 +176,7 @@ def main():
             # Upload to Google Sheets
             upload_to_google_sheets(
                 df,
-                spreadsheet_name="FanGraphs 2025 Stats",
+                spreadsheet_name="MLB Stats",
                 worksheet_name=sheet_name
             )
 

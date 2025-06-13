@@ -18,8 +18,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--debug', action='store_true', help='Enable debug mode')
 args = parser.parse_args()
 
-# Define the URLs and their corresponding sheet names
-STAT_URLS = [
+# Define the URLs and their corresponding sheet names for batters
+BATTER_METADATA = [
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&type=14&season=2025&month=0&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10",
         "sheet_name": "(B) Pitch Val / 100",
@@ -34,7 +34,11 @@ STAT_URLS = [
         "url": "https://www.fangraphs.com/leaders/major-league?stats=bat&lg=all&season=2025&season1=2025&ind=0&rost=&filter=&players=0&team=0&pageitems=2000000000&pos=np&qual=10&type=0&month=14",
         "sheet_name": "(B) Standard vs RHP",
         "parent_div_class_target": "table-scroll"
-    },
+    }
+]
+
+# Define the URLs and their corresponding sheet names for pitchers
+PITCHER_METADATA = [
     {
         "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=9&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
         "sheet_name": "(P) Pitch Splits",
@@ -44,9 +48,7 @@ STAT_URLS = [
         "url": "https://www.fangraphs.com/leaders/major-league?stats=pit&lg=all&type=13&season=2025&season1=2025&ind=0&rost=&age=&filter=&players=0&team=0&pageitems=2000000000&pos=all&qual=10&month=0",
         "sheet_name": "(P) Pitch Val / 100",
         "parent_div_class_target": "table-scroll"
-    },
-
-    # Add more URL and sheet name pairs as needed
+    }
 ]
 
 
@@ -206,32 +208,47 @@ def upload_to_google_sheets(df, spreadsheet_name, worksheet_name="Sheet1"):
         f"✅ Upload complete to Google Sheet: {spreadsheet_name} -> {worksheet_name}\n\n")
 
 
+def process_stats(driver, metadata, stat_type):
+    """Process a set of statistics (either batting or pitching)"""
+    print(f"\n🔄 Processing {stat_type} statistics...")
+    for url_data in metadata:
+        url = url_data["url"]
+        sheet_name = url_data["sheet_name"]
+        parent_div_class_target = url_data["parent_div_class_target"]
+        print(f"\nProcessing {sheet_name}...")
+
+        headers, data = scrape_table(
+            driver, url, parent_div_class_target, args.debug)
+        if not data:
+            print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
+            continue
+
+        df = pd.DataFrame(data, columns=headers)
+        if "Team" in df.columns and "Name" in df.columns:
+            df.sort_values(by=["Team", "Name"], inplace=True)
+
+        upload_to_google_sheets(
+            df,
+            spreadsheet_name="MLB Stats",
+            worksheet_name=sheet_name
+        )
+
+        # Add delay between requests
+        time.sleep(random.uniform(2, 4))
+
+
 def main():
     driver = setup_driver()
     try:
-        for url_data in STAT_URLS:
-            url = url_data["url"]
-            sheet_name = url_data["sheet_name"]
-            parent_div_class_target = url_data["parent_div_class_target"]
-            print(f"\nProcessing {sheet_name}...")
+        # Process batting statistics
+        process_stats(driver, BATTER_METADATA, "batting")
 
-            headers, data = scrape_table(
-                driver, url, parent_div_class_target, args.debug)
-            if not data:
-                print(f"⚠️ No data rows found for {sheet_name}. Skipping...")
-                continue
+        # Add a longer delay between batting and pitching stats
+        time.sleep(random.uniform(5, 8))
 
-            df = pd.DataFrame(data, columns=headers)
-            if "Team" in df.columns and "Name" in df.columns:
-                df.sort_values(by=["Team", "Name"], inplace=True)
+        # Process pitching statistics
+        process_stats(driver, PITCHER_METADATA, "pitching")
 
-            upload_to_google_sheets(
-                df,
-                spreadsheet_name="MLB Stats",
-                worksheet_name=sheet_name
-            )
-
-            time.sleep(random.uniform(2, 4))
     finally:
         driver.quit()
 
